@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Credit Default Prediction</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#10243e;--paper:#f3f5f8;--card:#fff;--line:#dde3ea;--muted:#5d6b7c;--safe:#1f9d8a;--risk:#d6453d;--accent:#2f5bea}
+@media (prefers-color-scheme:dark){:root{--ink:#e8eef6;--paper:#0e1726;--card:#16233a;--line:#26364f;--muted:#93a3b8;--safe:#3ec4ae;--risk:#ff6b61;--accent:#6c8cff}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:'Source Sans 3','Segoe UI',Arial,sans-serif;line-height:1.5}
+h1,h2,h3{font-family:'Bricolage Grotesque','Segoe UI',Arial,sans-serif;margin:0}
+header{background:#10243e;color:#fff;padding:28px 5vw 64px}
+header h1{font-size:clamp(1.6rem,3vw,2.3rem);max-width:22ch}
+header p{margin:8px 0 0;color:#b7c6da;max-width:60ch}
+main{max-width:1180px;margin:-40px auto 40px;padding:0 5vw;display:grid;grid-template-columns:minmax(260px,340px) 1fr;gap:20px;align-items:start}
+@media(max-width:860px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px}
+label{font-weight:600;font-size:.95rem}
+input[type=text]{width:100%;margin:6px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font:inherit}
+button{width:100%;padding:11px;border:0;border-radius:8px;font:inherit;font-weight:600;cursor:pointer;background:var(--accent);color:#fff}
+button.alt{background:transparent;color:var(--accent);border:1px solid var(--accent);margin-top:10px}
+button:disabled{opacity:.6;cursor:wait}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.hint{font-size:.85rem;color:var(--muted);margin:14px 0 0}
+#status{margin-top:14px;font-size:.92rem;min-height:1.3em}
+#status.err{color:var(--risk)}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media(max-width:620px){.kpis{grid-template-columns:repeat(2,1fr)}}
+.kpi small{color:var(--muted);display:block}
+.kpi b{font-family:'Bricolage Grotesque',sans-serif;font-size:1.8rem}
+.charts{display:grid;grid-template-columns:minmax(220px,1fr) 2fr;gap:16px;margin-top:16px}
+@media(max-width:620px){.charts{grid-template-columns:1fr}}
+.ring{position:relative;max-width:260px;margin:0 auto}
+.legend{display:flex;gap:16px;justify-content:center;margin-top:10px;font-size:.88rem;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
+.ring .mid{position:absolute;inset:0;display:grid;place-content:center;text-align:center;pointer-events:none}
+.ring .mid b{font-family:'Bricolage Grotesque',sans-serif;font-size:1.9rem;line-height:1}
+.ring .mid span{font-size:.8rem;color:var(--muted)}
+canvas{max-width:100%}
+table{width:100%;border-collapse:collapse;margin-top:8px;font-size:.92rem}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+.tag{padding:2px 10px;border-radius:99px;font-size:.82rem;font-weight:600}
+.tag.d{background:color-mix(in srgb,var(--risk) 18%,transparent);color:var(--risk)}
+.tag.s{background:color-mix(in srgb,var(--safe) 18%,transparent);color:var(--safe)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Which customers are likely to miss next month's payment?</h1>
+  <p>Run the trained model on a folder of customer CSV files and see the default risk at a glance.</p>
+</header>
+
+<main>
+  <section class="card" aria-label="Run prediction">
+    <form id="f">
+      <label for="csvfile">Folder path</label>
+      <input type="text" id="csvfile" placeholder="C:\path\to\Prediction_Batch_files" required>
+      <button id="customfile" type="submit">Run prediction on this folder</button>
+      <button id="defaultfile" type="button" class="alt" data-path="Prediction_Batch_files">Use the default folder</button>
+    </form>
+    <div id="status" role="status" aria-live="polite"></div>
+    <p class="hint">Files must be named creditCardFraud_DDMMYYYY_HHMMSS.csv and have 23 columns.</p>
+  </section>
+
+  <section aria-label="Results">
+    <div id="out">
+      <div class="kpis">
+        <div class="card kpi"><small>Customers scored</small><b id="k-total">0</b></div>
+        <div class="card kpi"><small>Likely to default</small><b id="k-def" style="color:var(--risk)">0</b></div>
+        <div class="card kpi"><small>Likely to pay</small><b id="k-safe" style="color:var(--safe)">0</b></div>
+        <div class="card kpi"><small>Default rate</small><b id="k-rate">0%</b></div>
+      </div>
+      <div class="charts">
+        <div class="card"><h3>Risk split</h3>
+          <div class="ring"><canvas id="c1" height="220" aria-label="Default vs non-default split" role="img"></canvas>
+          <div class="mid"><b id="mid-rate">0%</b><span>default rate</span></div></div>
+          <div class="legend"><span><i style="background:var(--safe)"></i>Likely to pay</span><span><i style="background:var(--risk)"></i>Likely to default</span></div>
+        </div>
+        <div class="card"><h3>Defaults across the file</h3>
+          <canvas id="c2" height="220" aria-label="Predicted defaults per block of rows" role="img"></canvas>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px"><h3>First predictions</h3>
+        <table><thead><tr><th>Row</th><th>Prediction</th></tr></thead><tbody id="rows"></tbody></table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let ch1, ch2;
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+function setBusy(b){ ['customfile','defaultfile'].forEach(i => $(i).disabled = b); }
+function say(t, err){ $('status').textContent = t; $('status').className = err ? 'err' : ''; }
+
+async function run(path){
+  setBusy(true); resetView(); say('Running prediction. This can take a few seconds.');
+  try{
+    const r = await fetch('/predict', {method:'POST', body:new URLSearchParams({filepath:path})});
+    const t = await r.text();
+    if(!t.startsWith('Prediction File created')){ say(t, true); return; }
+    say('Prediction complete.');
+    await load();
+  }catch(e){ say('Could not reach the server: ' + e.message, true); }
+  finally{ setBusy(false); }
+}
+
+function draw(d){
+  const safe = css('--safe'), risk = css('--risk'), txt = css('--muted'), line = css('--line');
+  if(ch1) ch1.destroy(); if(ch2) ch2.destroy();
+  ch1 = new Chart($('c1'), {type:'doughnut',
+    data:{labels:d ? ['Likely to pay','Likely to default'] : ['No data'],
+          datasets:[{data: d ? [d.safe, d.defaults] : [1], backgroundColor: d ? [safe, risk] : [line], borderWidth:0}]},
+    options:{cutout:'72%', plugins:{legend:{display:false}, tooltip:{enabled:!!d}}}});
+  ch2 = new Chart($('c2'), {type:'bar',
+    data:{labels: d ? d.buckets.map(b => b.label) : [], datasets:[
+      {label:'Likely to pay', data: d ? d.buckets.map(b => b.safe) : [], backgroundColor:safe, stack:'s'},
+      {label:'Likely to default', data: d ? d.buckets.map(b => b.defaults) : [], backgroundColor:risk, stack:'s'}]},
+    options:{scales:{x:{stacked:true, ticks:{color:txt}, title:{display:true, text:'Row range', color:txt}},
+                     y:{stacked:true, beginAtZero:true, suggestedMax:100, ticks:{color:txt}, title:{display:true, text:'Customers', color:txt}}},
+             plugins:{legend:{position:'bottom', labels:{color:txt}}}}});
+}
+
+function resetView(){
+  ['k-total','k-def','k-safe','k-rate','mid-rate'].forEach(i => $(i).textContent = '\u2013');
+  $('rows').innerHTML = '<tr><td colspan="2" style="color:var(--muted)">No predictions yet. Run a prediction to fill this table.</td></tr>';
+  draw(null);
+}
+
+async function load(){
+  const r = await fetch('/results');
+  const d = await r.json();
+  if(!r.ok){ say(d.error || 'Could not load results.', true); return; }
+  $('k-total').textContent = d.total.toLocaleString();
+  $('k-def').textContent = d.defaults.toLocaleString();
+  $('k-safe').textContent = d.safe.toLocaleString();
+  $('k-rate').textContent = d.rate + '%'; $('mid-rate').textContent = d.rate + '%';
+  $('rows').innerHTML = d.sample.map(s => `<tr><td>${s.row}</td><td><span class="tag ${s.pred ? 'd' : 's'}">${s.pred ? 'Likely to default' : 'Likely to pay'}</span></td></tr>`).join('');
+  draw(d);
+}
+
+$('f').addEventListener('submit', e => { e.preventDefault(); run($('csvfile').value.trim()); });
+$('defaultfile').addEventListener('click', () => run($('defaultfile').dataset.path));
+resetView();
+</script>
+</body>
+</html>
